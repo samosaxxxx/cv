@@ -303,10 +303,221 @@ plt.tight_layout()
 plt.show()
 
 
+----------FET
+from skimage.feature import blob_log
+from skimage.feature import graycomatrix,graycoprops
+def corner_detection(img1):
+  harris=cv2.cornerHarris(img1,2,3,0.04)
+  harris=cv2.dilate(harris,None)
+  img_harris=cv2.cvtColor(img1,cv2.COLOR_GRAY2BGR)
+  img_harris[harris>0.01*harris.max()]=[0,0,255]
+  return img_harris
+
+def blob_func(img1):
+  blobs=blob_log(img1,max_sigma=30,num_sigma=10,threshold=0.05)
+  img_blob=cv2.cvtColor(img1,cv2.COLOR_GRAY2BGR)
+  for blob in blobs:
+    y,x,r=blob
+    cv2.circle(img_blob,(int(x),int(y)),int(r*np.sqrt(2)),(0,255,0),2)
+  return cv2.cvtColor(img_blob,cv2.COLOR_BGR2GRAY)
+
+
+def texture_analysis(img1):
+  glcm=graycomatrix(img1,[1],[0,np.pi/4,np.pi/2,3*np.pi/4],levels=256,symmetric=True,normed=True)
+  contrast=graycoprops(glcm,'contrast')
+  energy=graycoprops(glcm,'energy')
+  homogenity=graycoprops(glcm,'homogeneity')
+  correlation=graycoprops(glcm,'correlation')
+
+  print(f"Contrast:{contrast.mean()}")
+  print(f'Energy:{energy.mean()}',energy)
+  print(f'Homogenity:{homogenity.mean()}')
+  print(f'Correlation:{correlation.mean()}')
+
+def sift_descriptor(img1,img2):
+  sift=cv2.SIFT_create()
+  kp_sift1,d_sift1=sift.detectAndCompute(img1,None)
+  img_sift1=cv2.drawKeypoints(img1,kp_sift1,None,flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+  img_sift1=cv2.cvtColor(img_sift1,cv2.COLOR_BGR2GRAY)
+
+  kp_sift2,d_sift2=sift.detectAndCompute(img2,None)
+  img_sift2=cv2.drawKeypoints(img2,kp_sift2,None,flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+  img_sift2=cv2.cvtColor(img_sift2,cv2.COLOR_BGR2GRAY)
+
+  bf=cv2.BFMatcher()
+  matches=bf.match(d_sift1,d_sift2)
+  matches=sorted(matches,key=lambda x:x.distance)
+  img3=cv2.drawMatches(img1,kp_sift1,img2,kp_sift2,matches[:50],None)
+  return img3
+
+def orb_descriptor(img1,img2):
+  orb=cv2.ORB_create()
+  kp_orb1,d_orb1=orb.detectAndCompute(img1,None)
+  img_orb1=cv2.drawKeypoints(img1,kp_orb1,None,flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+  img_orb1=cv2.cvtColor(img_orb1,cv2.COLOR_BGR2GRAY)
+
+  kp_orb2,d_orb2=orb.detectAndCompute(img1,None)
+  img_orb2=cv2.drawKeypoints(img2,kp_orb2,None,flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+  img_orb2=cv2.cvtColor(img_orb2,cv2.COLOR_BGR2GRAY)
+
+  bf=cv2.BFMatcher()
+  matches=bf.match(d_orb1,d_orb2)
+  matches=sorted(matches,key=lambda x:x.distance)
+  img3=cv2.drawMatches(img1,kp_orb1,img2,kp_orb2,matches[:50],None)
+  return img3
 
 
 
+corner=corner_detection(img1)
+blob_img=blob_func(img1)
+textures=texture_analysis(img1)
+sift_img=sift_descriptor(img1,img1)
+orb_img=orb_descriptor(img1,img1)
 
+plt.figure(figsize=(3,3))
+plt.imshow(corner,cmap='grey')
+plt.axis('off')
+
+plt.figure(figsize=(3,3))
+plt.imshow(blob_img,cmap='grey')
+plt.axis('off')
+
+plt.figure(figsize=(3,3))
+plt.imshow(sift_img)
+plt.axis('off')
+
+plt.figure(figsize=(3,3))
+plt.imshow(orb_img)
+plt.axis('off')
+
+---MORT
+def erosion(img1,kernel):
+  return cv2.erode(img1,kernel)
+
+def dilation(img1,kernel):
+  return cv2.dilate(img1,kernel)
+
+def opening(img1,kernel):
+  return erosion(dilation(img1,kernel),kernel)
+
+def closing(img1,kernel):
+  return dilation(erosion(img1,kernel),kernel)
+
+def gradient(img1,kernel):
+  return dilation(img1,kernel)-erosion(img1,kernel)
+
+def tophat_white(img1,kernel):
+  return img1-opening(img1,kernel)
+
+def tophat_black(img1,kernel):
+  return closing(img1,kernel)-img1
+
+def hit_miss(img1,kernel):
+  k1=np.uint8(kernel==1)
+  k0=np.uint8(kernel==0)
+  hit=erosion(img1,k1)
+  miss=erosion(img1,k0)
+  return np.minimum(hit,miss)
+
+def skeleton(img1):
+  return skeletonize(img1).astype(np.uint8)
+
+def thin_img(img1):
+  return thin(img1)
+
+def pruning(img1):
+  k1=np.ones((3,3),np.uint8)
+  return erosion(skeleton(img1),k1)
+
+def boundary_extraction(img1,kernel):
+  return erosion(img1,kernel)-img1
+
+kernel=np.array([[0,1,0],[1,1,1],[0,1,0]],dtype=np.uint8)
+
+er1=erosion(img1,kernel)
+dilate=dilation(img1,kernel)
+open1=opening(img1,kernel)
+close1=closing(img1,kernel)
+grad=gradient(img1,kernel)
+top_white=tophat_white(img1,kernel)
+top_black=tophat_black(img1,kernel)
+hit=hit_miss(img1,kernel)
+skel=skeleton(img1)
+thin_img=thin_img(img1)
+prune=pruning(img1)
+bound=boundary_extraction(img1,kernel)
+
+plt.figure(figsize=(3,3))
+plt.imshow(er1,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(dilate,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(open1,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(close1,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(grad,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(top_white,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(top_black,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(hit,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(skel,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(thin_img,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(prune,cmap='grey')
+plt.figure(figsize=(3,3))
+plt.imshow(bound,cmap='grey')
+
+-------Transforms
+import cv2, pywt
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+img = cv2.imread("j.jpeg", cv2.IMREAD_GRAYSCALE)
+f32 = np.float32(img)
+
+# ---------- DCT ----------
+dct = cv2.dct(f32)
+idct = cv2.idct(dct)
+
+# ---------- DWT / Haar ----------
+cA, (cH, cV, cD) = pywt.dwt2(f32, 'haar')
+idwt = pywt.idwt2((cA, (cH, cV, cD)), 'haar')
+
+
+plt.figure(figsize=(12,6))
+plt.subplot(231)
+plt.imshow(img, cmap='gray')
+plt.title("Original")
+plt.axis('off')
+
+plt.subplot(232)
+plt.imshow(np.log1p(abs(dct)), cmap='gray')
+plt.title("DCT Magnitude")
+plt.axis('off')
+
+plt.subplot(233)
+plt.imshow(np.uint8(idct), cmap='gray')
+plt.title("IDCT")
+plt.axis('off')
+
+plt.subplot(234)
+plt.imshow(np.vstack([np.hstack([cA, cH]), np.hstack([cV, cD])]), cmap='gray')
+plt.title("Haar DWT")
+plt.axis('off')
+
+plt.subplot(235)
+plt.imshow(np.uint8(idwt), cmap='gray')
+plt.title("IDWT")
+plt.axis('off')
+
+plt.tight_layout();
+plt.show()
 
 
 
