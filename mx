@@ -1,0 +1,312 @@
+---morph
+import cv2
+import numpy as np
+from skimage.morphology import skeletonize, thin
+import matplotlib.pyplot as plt
+def pad_image(img, kernel):
+    pad_h = kernel.shape[0] // 2
+    pad_w = kernel.shape[1] // 2
+    return np.pad(img, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant', constant_values=0)
+def erosion_binary(img, kernel):
+    img_padded = pad_image(img, kernel)
+    output = np.zeros_like(img)
+    kh, kw = kernel.shape
+    for i in range(output.shape[0]):
+        for j in range(output.shape[1]):
+            region = img_padded[i:i+kh, j:j+kw]
+            if np.all(region[kernel == 1] == 255):
+                output[i, j] = 255
+    return output
+def dilation_binary(img, kernel):
+    img_padded = pad_image(img, kernel)
+    output = np.zeros_like(img)
+    kh, kw = kernel.shape
+    for i in range(output.shape[0]):
+        for j in range(output.shape[1]):
+            region = img_padded[i:i+kh, j:j+kw]
+            if np.any(region[kernel == 1] == 255):
+                output[i, j] = 255
+    return output
+def opening_binary(img, kernel):
+    return dilation_binary(erosion_binary(img, kernel), kernel)
+def closing_binary(img, kernel):
+    return erosion_binary(dilation_binary(img, kernel), kernel)
+def gradient_binary(img, kernel):
+    return dilation_binary(img, kernel) - erosion_binary(img, kernel)
+def top_hat_white_binary(img, kernel):
+    opened = opening_binary(img, kernel)
+    return cv2.subtract(img, opened)
+def top_hat_black_binary(img, kernel):
+    closed = closing_binary(img, kernel)
+    return cv2.subtract(closed, img)
+def hit_or_miss(img, kernel):
+    img_bin = (img // 255).astype(np.uint8)
+    k1 = np.uint8(kernel == 1)
+    k0 = np.uint8(kernel == 0)
+    print(k1,"k1\n\n\n")
+    eroded1 = erosion_binary(img, k1)
+    eroded0 = erosion_binary(255 - img, k0)
+    return np.minimum(eroded1, eroded0)
+def skeletonization(img):
+    binary = (img // 255).astype(bool)
+    skeleton = skeletonize(binary)
+    return (skeleton * 255).astype(np.uint8)
+def thinning(img):
+    binary = (img // 255).astype(bool)
+    thin_img = thin(binary)
+    return (thin_img * 255).astype(np.uint8)
+def pruning(skeleton_img):
+    kernel = np.ones((3, 3), np.uint8)
+    pruned = erosion_binary(skeleton_img, kernel)
+    return pruned
+def erosion_gray(img, kernel):
+    img_padded = pad_image(img, kernel)
+    output = np.zeros_like(img)
+    kh, kw = kernel.shape
+    for i in range(output.shape[0]):
+        for j in range(output.shape[1]):
+            region = img_padded[i:i+kh, j:j+kw]
+            output[i, j] = np.min(region[kernel == 1])
+    return output
+def dilation_gray(img, kernel):
+    img_padded = pad_image(img, kernel)
+    output = np.zeros_like(img)
+    kh, kw = kernel.shape
+    for i in range(output.shape[0]):
+        for j in range(output.shape[1]):
+            region = img_padded[i:i+kh, j:j+kw]
+            output[i, j] = np.max(region[kernel == 1])
+    return output
+def opening_gray(img, kernel):
+    return dilation_gray(erosion_gray(img, kernel), kernel)
+def closing_gray(img, kernel):
+    return erosion_gray(dilation_gray(img, kernel), kernel)
+def gradient_gray(img, kernel):
+    return dilation_gray(img, kernel) - erosion_gray(img, kernel)
+def top_hat_white_gray(img, kernel):
+    opened = opening_gray(img, kernel)
+    return cv2.subtract(img, opened)
+def top_hat_black_gray(img, kernel):
+    closed = closing_gray(img, kernel)
+    return cv2.subtract(closed, img)
+if __name__ == "__main__":
+    # Load grayscale image
+    img = cv2.imread('path.png', cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise FileNotFoundError("Image not found! Please check the path.")
+    _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+    kernel = np.array([[0,1,0],
+                       [1,1,1],
+                       [0,1,0]], dtype=np.uint8)
+
+    # ======== Binary Morphology ========
+    ero_b = erosion_binary(binary, kernel)
+    dil_b = dilation_binary(binary, kernel)
+    opn_b = opening_binary(binary, kernel)
+    cls_b = closing_binary(binary, kernel)
+    grad_b = gradient_binary(binary, kernel)
+    topw_b = top_hat_white_binary(binary, kernel)
+    topb_b = top_hat_black_binary(binary, kernel)
+    hm = hit_or_miss(binary, kernel)
+    skel = skeletonization(binary)
+    thin_img = thinning(binary)
+    pruned = pruning(skel)
+
+    # ======== Gray-Level Morphology ========
+    ero_g = erosion_gray(img, kernel)
+    dil_g = dilation_gray(img, kernel)
+    opn_g = opening_gray(img, kernel)
+    cls_g = closing_gray(img, kernel)
+    grad_g = gradient_gray(img, kernel)
+    topw_g = top_hat_white_gray(img, kernel)
+    topb_g = top_hat_black_gray(img, kernel)
+
+    # ======== Display All ========
+    titles = [
+        'Binary Erosion', 'Binary Dilation', 'Binary Opening', 'Binary Closing',
+        'Binary Gradient', 'Top Hat (White)', 'Top Hat (Black)', 'Hit-or-Miss',
+        'Skeletonization', 'Thinning', 'Pruning',
+        'Gray Erosion', 'Gray Dilation', 'Gray Opening', 'Gray Closing',
+        'Gray Gradient', 'Gray Top Hat (White)', 'Gray Top Hat (Black)'
+    ]
+    images = [
+        ero_b, dil_b, opn_b, cls_b,
+        grad_b, topw_b, topb_b, hm,
+        skel, thin_img, pruned,
+        ero_g, dil_g, opn_g, cls_g,
+        grad_g, topw_g, topb_g
+    ]
+
+    plt.figure(figsize=(18, 18))
+    for i in range(len(images)):
+        plt.subplot(5, 4, i + 1)
+        plt.imshow(images[i], cmap='gray')
+        plt.title(titles[i])
+        plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+---------------FEATURE
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+from skimage.feature import blob_log
+import importlib
+
+# --- Handle scikit-image GLCM imports for both old and new versions ---
+try:
+    from skimage.feature import graycomatrix, graycoprops
+except ImportError:
+    from skimage.feature import greycomatrix as graycomatrix
+    from skimage.feature import greycoprops as graycoprops
+
+# ========== 1. Read Image in Grayscale ==========
+img = cv2.imread('cam.jpeg', cv2.IMREAD_GRAYSCALE)
+if img is None:
+    raise FileNotFoundError("Image not found. Please check the file path.")
+
+plt.figure(figsize=(6, 6))
+plt.imshow(img, cmap='gray')
+plt.title("Original Grayscale Image")
+plt.axis('off')
+plt.show()
+
+# ========== 2. Corner Detection ==========
+# Harris Corner Detection
+harris = cv2.cornerHarris(np.float32(img), 2, 3, 0.04)
+harris = cv2.dilate(harris, None)
+img_harris = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+img_harris[harris > 0.01 * harris.max()] = [0, 0, 255]
+# Shi-Tomasi Corner Detection
+corners = cv2.goodFeaturesToTrack(img, 100, 0.01, 10)
+img_shi = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+if corners is not None:
+    for c in corners:
+        x, y = c.ravel()
+        cv2.circle(img_shi, (int(x), int(y)), 3, (0, 255, 0), -1)
+
+plt.figure(figsize=(12, 5))
+plt.subplot(1, 2, 1)
+plt.imshow(cv2.cvtColor(img_harris, cv2.COLOR_BGR2RGB))
+plt.title("Harris Corners")
+plt.axis('off')
+
+plt.subplot(1, 2, 2)
+plt.imshow(cv2.cvtColor(img_shi, cv2.COLOR_BGR2RGB))
+plt.title("Shi-Tomasi Corners")
+plt.axis('off')
+plt.show()
+# ========== 3. Blob Detection (Laplacian of Gaussian) ==========
+blobs = blob_log(img, max_sigma=30, num_sigma=10, threshold=0.05)
+img_blob = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+for blob in blobs:
+    y, x, r = blob
+    cv2.circle(img_blob, (int(x), int(y)), int(r * np.sqrt(2)), (255, 0, 0), 2)
+
+plt.figure(figsize=(6, 6))
+plt.imshow(cv2.cvtColor(img_blob, cv2.COLOR_BGR2RGB))
+plt.title("Blob Detection (LoG)")
+plt.axis('off')
+plt.show()
+# ========== 4. Texture Analysis (GLCM) ==========
+glcm = graycomatrix(img, [1], [0, np.pi/4, np.pi/2, 3*np.pi/4],
+                    levels=256, symmetric=True, normed=True)
+
+contrast = graycoprops(glcm, 'contrast')
+homogeneity = graycoprops(glcm, 'homogeneity')
+energy = graycoprops(glcm, 'energy')
+correlation = graycoprops(glcm, 'correlation')
+
+print("=== Texture Analysis (GLCM Features) ===")
+print(f"Contrast: {contrast.mean():.4f}")
+print(f"Homogeneity: {homogeneity.mean():.4f}")
+print(f"Energy: {energy.mean():.4f}")
+print(f"Correlation: {correlation.mean():.4f}")
+# --- SIFT ---
+sift = cv2.SIFT_create()
+kp_sift, des_sift = sift.detectAndCompute(img, None)
+img_sift = cv2.drawKeypoints(img, kp_sift, None,
+                             flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+# --- ORB ---
+orb = cv2.ORB_create()
+kp_orb, des_orb = orb.detectAndCompute(img, None)
+img_orb = cv2.drawKeypoints(img, kp_orb, None,
+                            flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+# --- Display SIFT, SURF, ORB ---
+plt.figure(figsize=(18, 6))
+plt.subplot(1, 3, 1)
+plt.imshow(cv2.cvtColor(img_sift, cv2.COLOR_BGR2RGB))
+plt.title("SIFT Features")
+plt.axis('off')
+
+plt.subplot(1, 3, 3)
+plt.imshow(cv2.cvtColor(img_orb, cv2.COLOR_BGR2RGB))
+plt.title("ORB Features")
+plt.axis('off')
+plt.show()
+-------------------WATERSHED
+import cv2
+import numpy as np
+from scipy import ndimage as ndi
+import matplotlib.pyplot as plt
+from skimage.filters import sobel
+from skimage.color import label2rgb
+from skimage.segmentation import watershed
+
+coins = cv2.imread('/coins.png',0)
+
+elevation_map = sobel(coins)
+
+plt.figure(figsize=(10, 6))
+plt.imshow(elevation_map, cmap='gray', interpolation='nearest')
+plt.title('Elevation Map')
+plt.axis('off')
+plt.show()
+
+markers = np.zeros_like(coins)
+markers[coins < 30] = 1
+markers[coins > 150] = 2
+
+plt.figure(figsize=(10, 6))
+img = plt.imshow(markers, cmap='hot', interpolation='nearest')
+plt.colorbar(img)
+plt.title('Markers')
+plt.axis('off')
+plt.show()
+
+segmentation = watershed(elevation_map, markers)
+
+plt.figure(figsize=(10, 6))
+plt.imshow(segmentation, cmap='gray', interpolation='nearest')
+plt.title('Segmentation')
+plt.axis('off')
+plt.show()
+
+segmentation = ndi.binary_fill_holes(segmentation - 1)
+labeled_coins, _ = ndi.label(segmentation)
+image_label_overlay = label2rgb(labeled_coins, image=coins)
+
+plt.figure(figsize=(20, 6))
+
+# Left image: coins with contour overlay
+plt.subplot(1, 2, 1)
+plt.imshow(coins, cmap='gray', interpolation='nearest')
+plt.contour(segmentation, [0.5], linewidths=1.2, colors='y')
+plt.axis('off')
+
+# Right image: labeled overlay
+plt.subplot(1, 2, 2)
+plt.imshow(image_label_overlay, interpolation='nearest')
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
